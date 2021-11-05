@@ -5,11 +5,167 @@
  */
 
 // IMPORTANT: these imports must be type-only
-import type {Directive, DirectiveResult, PartInfo} from './directive.js';
+import type { Directive, DirectiveResult, PartInfo } from './directive.js';
 
 const DEV_MODE = true;
 const ENABLE_EXTRA_SECURITY_HOOKS = true;
 const ENABLE_SHADYDOM_NOPATCH = true;
+
+export namespace DebugLog {
+  export type Entry =
+    TemplatePrep | TemplateInstantiated |
+    TemplateInstantiatedAndUpdated | TemplateUpdating |
+    BeginRender | EndRender | CommitPartEntry |
+    SetPartValue;
+  export interface TemplatePrep {
+    kind: 'template prep',
+    template: Template,
+    strings: TemplateStringsArray,
+    clonableTemplate: HTMLTemplateElement,
+    parts: TemplatePart[],
+  }
+  export interface BeginRender {
+    kind: 'begin render';
+    id: number;
+    value: unknown;
+    container: HTMLElement | DocumentFragment;
+    options: RenderOptions | undefined;
+    part: ChildPart | undefined;
+  }
+  export interface EndRender {
+    kind: 'end render';
+    id: number;
+    value: unknown;
+    container: HTMLElement | DocumentFragment;
+    options: RenderOptions | undefined;
+    part: ChildPart;
+  }
+  export interface TemplateInstantiated {
+    kind: 'template instantiated',
+    template: Template | CompiledTemplate,
+    instance: TemplateInstance,
+    options: RenderOptions | undefined,
+    fragment: Node,
+    parts: Array<Part | undefined>,
+    values: unknown[];
+  }
+  export interface TemplateInstantiatedAndUpdated {
+    kind: 'template instantiated and updated',
+    template: Template | CompiledTemplate,
+    instance: TemplateInstance,
+    options: RenderOptions | undefined,
+    fragment: Node,
+    parts: Array<Part | undefined>,
+    values: unknown[];
+  }
+  export interface TemplateUpdating {
+    kind: 'template updating',
+    template: Template | CompiledTemplate,
+    instance: TemplateInstance,
+    options: RenderOptions | undefined,
+    parts: Array<Part | undefined>,
+    values: unknown[];
+  }
+  export interface SetPartValue {
+    kind: 'set part';
+    part: Part;
+    value: unknown;
+    valueIndex: number;
+    values: unknown[];
+    templateInstance: TemplateInstance;
+  }
+
+  export type CommitPartEntry = CommitNothingToChildEntry | CommitText | CommitNode |
+    CommitAttribute | CommitProperty | CommitBooleanAttribute |
+    CommitEventListener | CommitToElementBinding;
+
+  export interface CommitNothingToChildEntry {
+    kind: 'commit nothing to child';
+    start: ChildNode;
+    end: ChildNode | null;
+    parent: Disconnectable | undefined;
+    options: RenderOptions | undefined;
+  }
+
+  export interface CommitText {
+    kind: 'commit text';
+    node: Text;
+    value: unknown;
+    options: RenderOptions | undefined;
+  }
+
+  export interface CommitNode {
+    kind: 'commit node';
+    start: Node,
+    parent: Disconnectable | undefined;
+    value: Node,
+    options: RenderOptions | undefined;
+  }
+
+  export interface CommitAttribute {
+    kind: 'commit attribute';
+    element: Element;
+    name: string;
+    value: unknown;
+    options: RenderOptions | undefined;
+  }
+
+  export interface CommitProperty {
+    kind: 'commit property';
+    element: Element;
+    name: string;
+    value: unknown;
+    options: RenderOptions | undefined;
+  }
+
+  export interface CommitBooleanAttribute {
+    kind: 'commit boolean attribute';
+    element: Element;
+    name: string;
+    value: boolean;
+    options: RenderOptions | undefined;
+  }
+
+  export interface CommitEventListener {
+    kind: 'commit event listener';
+    element: Element;
+    name: string;
+    value: unknown;
+    oldListener: unknown;
+    options: RenderOptions | undefined;
+    // True if we're removing the old event listener (e.g. because settings changed, or value is nothing)
+    removeListener: boolean;
+    // True if we're adding a new event listener (e.g. because first render, or settings changed)
+    addListener: boolean;
+  }
+
+  export interface CommitToElementBinding {
+    kind: 'commit to element binding';
+    element: Element;
+    value: unknown;
+    options: RenderOptions | undefined;
+  }
+}
+
+interface DebugLoggingWindow {
+  // Even in dev mode, we generally don't want to emit these events, as that's
+  // another level of cost, so only emit them when DEV_MODE is true _and_ when
+  // window.emitLitDebugEvents is true.
+  emitLitDebugLogEvents?: boolean;
+}
+
+/**
+ * Useful for visualizing and logging insights into what the Lit template system is doing.
+ *
+ * Compiled out of prod mode builds.
+ */
+const debugLogEvent = DEV_MODE ? (event: DebugLog.Entry) => {
+  const shouldEmit = (window as unknown as DebugLoggingWindow).emitLitDebugLogEvents;
+  if (shouldEmit) {
+    window.dispatchEvent(new CustomEvent<DebugLog.Entry>('lit-debug', { detail: event }))
+  }
+} : undefined;
+let debugLogId = 0;
 
 /**
  * `true` if we're building for google3 with temporary back-compat helpers.
@@ -42,8 +198,8 @@ if (DEV_MODE) {
 
 const wrap =
   ENABLE_SHADYDOM_NOPATCH &&
-  window.ShadyDOM?.inUse &&
-  window.ShadyDOM?.noPatch === true
+    window.ShadyDOM?.inUse &&
+    window.ShadyDOM?.noPatch === true
     ? window.ShadyDOM!.wrap
     : (node: Node) => node;
 
@@ -59,8 +215,8 @@ const trustedTypes = (globalThis as unknown as Partial<Window>).trustedTypes;
  */
 const policy = trustedTypes
   ? trustedTypes.createPolicy('lit-html', {
-      createHTML: (s) => s,
-    })
+    createHTML: (s) => s,
+  })
   : undefined;
 
 /**
@@ -118,7 +274,7 @@ const setSanitizer = (newSanitizer: SanitizerFactory) => {
   if (sanitizerFactoryInternal !== noopSanitizer) {
     throw new Error(
       `Attempted to overwrite existing lit-html security policy.` +
-        ` setSanitizeDOMValueFactory should be called at most once.`
+      ` setSanitizeDOMValueFactory should be called at most once.`
     );
   }
   sanitizerFactoryInternal = newSanitizer;
@@ -289,23 +445,23 @@ export interface CompiledTemplate extends Omit<Template, 'el'> {
  */
 const tag =
   <T extends ResultType>(type: T) =>
-  (strings: TemplateStringsArray, ...values: unknown[]): TemplateResult<T> => {
-    // Warn against templates octal escape sequences
-    // We do this here rather than in render so that the warning is closer to the
-    // template definition.
-    if (DEV_MODE && strings.some((s) => s === undefined)) {
-      console.warn(
-        'Some template strings are undefined.\n' +
+    (strings: TemplateStringsArray, ...values: unknown[]): TemplateResult<T> => {
+      // Warn against templates octal escape sequences
+      // We do this here rather than in render so that the warning is closer to the
+      // template definition.
+      if (DEV_MODE && strings.some((s) => s === undefined)) {
+        console.warn(
+          'Some template strings are undefined.\n' +
           'This is probably caused by illegal octal escape sequences.'
-      );
-    }
-    return {
-      // This property needs to remain unminified.
-      ['_$litType$']: type,
-      strings,
-      values,
+        );
+      }
+      return {
+        // This property needs to remain unminified.
+        ['_$litType$']: type,
+        strings,
+        values,
+      };
     };
-  };
 
 /**
  * Interprets a template literal as an HTML template that can efficiently
@@ -387,7 +543,7 @@ export interface RenderOptions {
    * node). This controls the `ownerDocument` of the rendered DOM, along with
    * any inherited context. Defaults to the global `document`.
    */
-  creationScope?: {importNode(node: Node, deep?: boolean): Node};
+  creationScope?: { importNode(node: Node, deep?: boolean): Node };
   /**
    * The initial connected state for the top-level part being rendered. If no
    * `isConnected` option is set, `AsyncDirective`s will be connected by
@@ -422,17 +578,19 @@ export const render = (
   container: HTMLElement | DocumentFragment,
   options?: RenderOptions
 ): RootPart => {
+  const renderId = DEV_MODE ? debugLogId++ : 0;
   const partOwnerNode = options?.renderBefore ?? container;
   // This property needs to remain unminified.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let part: ChildPart = (partOwnerNode as any)['_$litPart$'];
+  debugLogEvent?.({ kind: 'begin render', id: renderId, value, container, options, part });
   if (part === undefined) {
     const endNode = options?.renderBefore ?? null;
     // Internal modification: don't clear container to match lit-html 2.0
     if (
       INTERNAL &&
       (options as InternalRenderOptions)?.clearContainerForLit2MigrationOnly ===
-        true
+      true
     ) {
       let n = container.firstChild;
       // Clear only up to the `endNode` aka `renderBefore` node.
@@ -452,6 +610,7 @@ export const render = (
     );
   }
   part._$setValue(value);
+  debugLogEvent?.({ kind: 'end render', id: renderId, value, container, options, part });
   return part as RootPart;
 };
 
@@ -566,7 +725,7 @@ const getTemplateHtml = (
           if (DEV_MODE) {
             throw new Error(
               'Bindings in tag names are not supported. Please use static templates instead. ' +
-                'See https://lit.dev/docs/templates/expressions/#static-expressions'
+              'See https://lit.dev/docs/templates/expressions/#static-expressions'
             );
           }
           regex = tagEndRegex;
@@ -589,8 +748,8 @@ const getTemplateHtml = (
             match[QUOTE_CHAR] === undefined
               ? tagEndRegex
               : match[QUOTE_CHAR] === '"'
-              ? doubleQuoteAttrEndRegex
-              : singleQuoteAttrEndRegex;
+                ? doubleQuoteAttrEndRegex
+                : singleQuoteAttrEndRegex;
         }
       } else if (
         regex === doubleQuoteAttrEndRegex ||
@@ -613,9 +772,9 @@ const getTemplateHtml = (
       // position - either in a tag, or a quoted attribute value.
       console.assert(
         attrNameEndIndex === -1 ||
-          regex === tagEndRegex ||
-          regex === singleQuoteAttrEndRegex ||
-          regex === doubleQuoteAttrEndRegex,
+        regex === tagEndRegex ||
+        regex === singleQuoteAttrEndRegex ||
+        regex === doubleQuoteAttrEndRegex,
         'unexpected parse state B'
       );
     }
@@ -639,13 +798,13 @@ const getTemplateHtml = (
       regex === textEndRegex
         ? s + nodeMarker
         : attrNameEndIndex >= 0
-        ? (attrNames.push(attrName!),
-          s.slice(0, attrNameEndIndex) +
+          ? (attrNames.push(attrName!),
+            s.slice(0, attrNameEndIndex) +
             boundAttributeSuffix +
             s.slice(attrNameEndIndex)) +
           marker +
           end
-        : s +
+          : s +
           marker +
           (attrNameEndIndex === -2 ? (attrNames.push(undefined), i) : end);
   }
@@ -679,7 +838,7 @@ const getTemplateHtml = (
 };
 
 /** @internal */
-export type {Template};
+export type { Template };
 class Template {
   /** @internal */
   el!: HTMLTemplateElement;
@@ -688,7 +847,7 @@ class Template {
 
   constructor(
     // This property needs to remain unminified.
-    {strings, ['_$litType$']: type}: TemplateResult,
+    { strings, ['_$litType$']: type }: TemplateResult,
     options?: RenderOptions
   ) {
     let node: Node | null;
@@ -770,10 +929,10 @@ class Template {
                     m[1] === '.'
                       ? PropertyPart
                       : m[1] === '?'
-                      ? BooleanAttributePart
-                      : m[1] === '@'
-                      ? EventPart
-                      : AttributePart,
+                        ? BooleanAttributePart
+                        : m[1] === '@'
+                          ? EventPart
+                          : AttributePart,
                 });
               } else {
                 parts.push({
@@ -808,7 +967,7 @@ class Template {
               (node as Element).append(strings[i], createMarker());
               // Walk past the marker node we just added
               walker.nextNode();
-              parts.push({type: CHILD_PART, index: ++nodeIndex});
+              parts.push({ type: CHILD_PART, index: ++nodeIndex });
             }
             // Note because this marker is added after the walker's current
             // node, it will be walked to in the outer loop (and ignored), so
@@ -819,13 +978,13 @@ class Template {
       } else if (node.nodeType === 8) {
         const data = (node as Comment).data;
         if (data === markerMatch) {
-          parts.push({type: CHILD_PART, index: nodeIndex});
+          parts.push({ type: CHILD_PART, index: nodeIndex });
         } else {
           let i = -1;
           while ((i = (node as Comment).data.indexOf(marker, i + 1)) !== -1) {
             // Comment node has a binding marker inside, make an inactive part
             // The binding won't work, but subsequent bindings will
-            parts.push({type: COMMENT_PART, index: nodeIndex});
+            parts.push({ type: COMMENT_PART, index: nodeIndex });
             // Move to the end of the match
             i += marker.length - 1;
           }
@@ -833,6 +992,7 @@ class Template {
       }
       nodeIndex++;
     }
+    debugLogEvent?.({ kind: 'template prep', template: this, clonableTemplate: this.el, parts: this.parts, strings });
   }
 
   // Overridden via `litHtmlPolyfillSupport` to provide platform support.
@@ -875,7 +1035,7 @@ function resolveDirective(
   const nextDirectiveConstructor = isPrimitive(value)
     ? undefined
     : // This property needs to remain unminified.
-      (value as DirectiveResult)['_$litDirective$'];
+    (value as DirectiveResult)['_$litDirective$'];
   if (currentDirective?.constructor !== nextDirectiveConstructor) {
     // This property needs to remain unminified.
     currentDirective?.['_$notifyDirectiveConnectionChanged']?.(false);
@@ -937,7 +1097,7 @@ class TemplateInstance implements Disconnectable {
   // DocumentFragment and we don't want to hold onto it with an instance field.
   _clone(options: RenderOptions | undefined) {
     const {
-      el: {content},
+      el: { content },
       parts: parts,
     } = this._$template;
     const fragment = (options?.creationScope ?? d).importNode(content, true);
@@ -984,6 +1144,7 @@ class TemplateInstance implements Disconnectable {
     let i = 0;
     for (const part of this._parts) {
       if (part !== undefined) {
+        debugLogEvent?.({ kind: 'set part', part, value: values[i], valueIndex: i, values, templateInstance: this });
         if ((part as AttributePart).strings !== undefined) {
           (part as AttributePart)._$setValue(values, part as AttributePart, i);
           // The number of values the part consumes is part.strings.length - 1
@@ -1043,7 +1204,7 @@ export type Part =
   | ElementPart
   | EventPart;
 
-export type {ChildPart};
+export type { ChildPart };
 class ChildPart implements Disconnectable {
   readonly type = CHILD_PART;
   readonly options: RenderOptions | undefined;
@@ -1170,6 +1331,9 @@ class ChildPart implements Disconnectable {
       // fallback content.
       if (value === nothing || value == null || value === '') {
         if (this._$committedValue !== nothing) {
+          debugLogEvent?.({
+            kind: 'commit nothing to child', start: this._$startNode, end: this._$endNode, parent: this._$parent, options: this.options,
+          });
           this._$clear();
         }
         this._$committedValue = nothing;
@@ -1223,6 +1387,7 @@ class ChildPart implements Disconnectable {
           throw new Error(message);
         }
       }
+      debugLogEvent?.({ kind: 'commit node', start: this._$startNode, parent: this._$parent, value: value.cloneNode(true), options: this.options });
       this._$committedValue = this._insert(value);
     }
   }
@@ -1242,6 +1407,7 @@ class ChildPart implements Disconnectable {
         }
         value = this._textSanitizer(value);
       }
+      debugLogEvent?.({ kind: 'commit text', node, value, options: this.options });
       (node as Text).data = value as string;
     } else {
       if (ENABLE_EXTRA_SECURITY_HOOKS) {
@@ -1250,14 +1416,16 @@ class ChildPart implements Disconnectable {
         // When setting text content, for security purposes it matters a lot
         // what the parent is. For example, <style> and <script> need to be
         // handled with care, while <span> does not. So first we need to put a
-        // text node into the document, then we can sanitize its contentx.
+        // text node into the document, then we can sanitize its content.
         if (this._textSanitizer === undefined) {
           this._textSanitizer = createSanitizer(textNode, 'data', 'property');
         }
         value = this._textSanitizer(value);
+        debugLogEvent?.({ kind: 'commit text', node: textNode, value, options: this.options });
         textNode.data = value as string;
       } else {
         this._commitNode(d.createTextNode(value as string));
+        debugLogEvent?.({ kind: 'commit text', node: wrap(this._$startNode).nextSibling as Text, value, options: this.options });
       }
     }
     this._$committedValue = value;
@@ -1267,7 +1435,7 @@ class ChildPart implements Disconnectable {
     result: TemplateResult | CompiledTemplateResult
   ): void {
     // This property needs to remain unminified.
-    const {values, ['_$litType$']: type} = result;
+    const { values, ['_$litType$']: type } = result;
     // If $litType$ is a number, result is a plain TemplateResult and we get
     // the template from the template cache. If not, result is a
     // CompiledTemplateResult and _$litType$ is a CompiledTemplate and we need
@@ -1276,15 +1444,18 @@ class ChildPart implements Disconnectable {
       typeof type === 'number'
         ? this._$getTemplate(result as TemplateResult)
         : (type.el === undefined &&
-            (type.el = Template.createElement(type.h, this.options)),
+          (type.el = Template.createElement(type.h, this.options)),
           type);
 
     if ((this._$committedValue as TemplateInstance)?._$template === template) {
+      debugLogEvent?.({ kind: 'template updating', template, instance: (this._$committedValue as TemplateInstance), parts: (this._$committedValue as TemplateInstance)._parts, options: this.options, values });
       (this._$committedValue as TemplateInstance)._update(values);
     } else {
       const instance = new TemplateInstance(template as Template, this);
       const fragment = instance._clone(this.options);
+      debugLogEvent?.({ kind: 'template instantiated', template, instance, parts: instance._parts, options: this.options, fragment, values });
       instance._update(values);
+      debugLogEvent?.({ kind: 'template instantiated and updated', template, instance, parts: instance._parts, options: this.options, fragment, values });
       this._commitNode(fragment);
       this._$committedValue = instance;
     }
@@ -1391,7 +1562,7 @@ class ChildPart implements Disconnectable {
     } else if (DEV_MODE) {
       throw new Error(
         'part.setConnected() may only be called on a ' +
-          'RootPart returned from render().'
+        'RootPart returned from render().'
       );
     }
   }
@@ -1420,7 +1591,7 @@ export interface RootPart extends ChildPart {
   setConnected(isConnected: boolean): void;
 }
 
-export type {AttributePart};
+export type { AttributePart };
 class AttributePart implements Disconnectable {
   readonly type = ATTRIBUTE_PART as
     | typeof ATTRIBUTE_PART
@@ -1566,6 +1737,7 @@ class AttributePart implements Disconnectable {
         }
         value = this._sanitizer(value ?? '');
       }
+      debugLogEvent?.({ kind: 'commit attribute', element: this.element, name: this.name, value, options: this.options });
       (wrap(this.element) as Element).setAttribute(
         this.name,
         (value ?? '') as string
@@ -1574,7 +1746,7 @@ class AttributePart implements Disconnectable {
   }
 }
 
-export type {PropertyPart};
+export type { PropertyPart };
 class PropertyPart extends AttributePart {
   override readonly type = PROPERTY_PART;
 
@@ -1590,6 +1762,7 @@ class PropertyPart extends AttributePart {
       }
       value = this._sanitizer(value);
     }
+    debugLogEvent?.({ kind: 'commit property', element: this.element, name: this.name, value, options: this.options });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (this.element as any)[this.name] = value === nothing ? undefined : value;
   }
@@ -1609,6 +1782,7 @@ class BooleanAttributePart extends AttributePart {
 
   /** @internal */
   override _commitValue(value: unknown) {
+    debugLogEvent?.({ kind: 'commit boolean attribute', element: this.element, name: this.name, value: !!(value && value !== nothing), options: this.options });
     if (value && value !== nothing) {
       (wrap(this.element) as Element).setAttribute(
         this.name,
@@ -1634,7 +1808,7 @@ type EventListenerWithOptions = EventListenerOrEventListenerObject &
  * Because event options are passed when adding listeners, we must take case
  * to add and remove the part as a listener when the event options change.
  */
-export type {EventPart};
+export type { EventPart };
 class EventPart extends AttributePart {
   override readonly type = EVENT_PART;
 
@@ -1650,8 +1824,8 @@ class EventPart extends AttributePart {
     if (DEV_MODE && this.strings !== undefined) {
       throw new Error(
         `A \`<${element.localName}>\` has a \`@${name}=...\` listener with ` +
-          'invalid content. Event listeners in templates must have exactly ' +
-          'one expression and no surrounding text.'
+        'invalid content. Event listeners in templates must have exactly ' +
+        'one expression and no surrounding text.'
       );
     }
   }
@@ -1675,11 +1849,11 @@ class EventPart extends AttributePart {
     const shouldRemoveListener =
       (newListener === nothing && oldListener !== nothing) ||
       (newListener as EventListenerWithOptions).capture !==
-        (oldListener as EventListenerWithOptions).capture ||
+      (oldListener as EventListenerWithOptions).capture ||
       (newListener as EventListenerWithOptions).once !==
-        (oldListener as EventListenerWithOptions).once ||
+      (oldListener as EventListenerWithOptions).once ||
       (newListener as EventListenerWithOptions).passive !==
-        (oldListener as EventListenerWithOptions).passive;
+      (oldListener as EventListenerWithOptions).passive;
 
     // If the new value is not nothing and we removed the listener, we have
     // to add the part as a listener.
@@ -1687,6 +1861,7 @@ class EventPart extends AttributePart {
       newListener !== nothing &&
       (oldListener === nothing || shouldRemoveListener);
 
+    debugLogEvent?.({ kind: 'commit event listener', element: this.element, name: this.name, value: newListener, options: this.options, removeListener: shouldRemoveListener, addListener: shouldAddListener, oldListener });
     if (shouldRemoveListener) {
       this.element.removeEventListener(
         this.name,
@@ -1716,7 +1891,7 @@ class EventPart extends AttributePart {
   }
 }
 
-export type {ElementPart};
+export type { ElementPart };
 class ElementPart implements Disconnectable {
   readonly type = ELEMENT_PART;
 
@@ -1749,6 +1924,7 @@ class ElementPart implements Disconnectable {
   }
 
   _$setValue(value: unknown): void {
+    debugLogEvent?.({ kind: 'commit to element binding', element: this.element, value, options: this.options });
     resolveDirective(this, value);
   }
 }
@@ -1804,6 +1980,6 @@ if (DEV_MODE && globalThis.litHtmlVersions.length > 1) {
   issueWarning!(
     'multiple-versions',
     `Multiple versions of Lit loaded. ` +
-      `Loading multiple versions is not recommended.`
+    `Loading multiple versions is not recommended.`
   );
 }

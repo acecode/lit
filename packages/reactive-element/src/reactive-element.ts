@@ -99,6 +99,39 @@ if (DEV_MODE) {
   });
 }
 
+export namespace ReactiveElementDebugLog {
+  export type Entry = Update;
+  export interface Update {
+    kind: 'update';
+  }
+}
+
+interface DebugLoggingWindow {
+  // Even in dev mode, we generally don't want to emit these events, as that's
+  // another level of cost, so only emit them when DEV_MODE is true _and_ when
+  // window.emitLitDebugEvents is true.
+  emitLitDebugLogEvents?: boolean;
+}
+
+/**
+ * Useful for visualizing and logging insights into what the Lit template system is doing.
+ *
+ * Compiled out of prod mode builds.
+ */
+const debugLogEvent = DEV_MODE
+  ? (event: ReactiveElementDebugLog.Entry) => {
+      const shouldEmit = (window as unknown as DebugLoggingWindow)
+        .emitLitDebugLogEvents;
+      if (shouldEmit) {
+        window.dispatchEvent(
+          new CustomEvent<ReactiveElementDebugLog.Entry>('lit-debug', {
+            detail: event,
+          })
+        );
+      }
+    }
+  : undefined;
+
 /*
  * When using Closure Compiler, JSCompiler_renameProperty(property, object) is
  * replaced at compile time by the munged name for object[property]. We cannot
