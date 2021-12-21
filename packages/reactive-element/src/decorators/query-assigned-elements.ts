@@ -17,9 +17,8 @@ import type {ReactiveElement} from '../reactive-element.js';
 import type {QueryAssignedNodesOptions} from './query-assigned-nodes.js';
 
 /**
- * Options for the [[`queryAssignedElements`]] decorator. Extends the options
- * that can be passed into
- * [HTMLSlotElement.assignedElements](https://developer.mozilla.org/en-US/docs/Web/API/HTMLSlotElement/assignedElements).
+ * Options for the {@linkcode queryAssignedElements} decorator. Extends the
+ * options that can be passed into [HTMLSlotElement.assignedElements](https://developer.mozilla.org/en-US/docs/Web/API/HTMLSlotElement/assignedElements).
  */
 export interface QueryAssignedElementsOptions
   extends QueryAssignedNodesOptions {
@@ -36,7 +35,7 @@ export interface QueryAssignedElementsOptions
  * way to use
  * [`slot.assignedElements`](https://developer.mozilla.org/en-US/docs/Web/API/HTMLSlotElement/assignedElements).
  *
- * Can be passed an optional [[`QueryAssignedElementsOptions`]] object.
+ * Can be passed an optional {@linkcode QueryAssignedElementsOptions} object.
  *
  * Example usage:
  * ```ts
